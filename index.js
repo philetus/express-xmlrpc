@@ -7,6 +7,25 @@ const Deserializer = require('./lib/deserializer.js')
 const Serializer = require('./lib/serializer.js')
 const Client = require('./lib/client.js')
 
+// log message hooks
+const loggingHooks = {
+  deserializeError: (error) => {
+    console.error('failed to deserialize method call from body:', error);
+  },
+  incomingRequest: (req) => {
+    console.log(`calling method '${req.body.method}`
+      + `(${JSON.stringify(req.body.params)})'`);
+  },
+  requestError: (req, error) => {
+    console.error(`error calling method '${req.body.method}:`, error);
+  }
+};
+
+// allow applications to replace the hooks
+exports.setLoggingHooks = (hooks) => {
+  Object.assign(loggingHooks, hooks);
+}
+
 // for serializing xmlrpc responses inside api methods
 exports.serializeResponse = Serializer.serializeMethodResponse // (params)
 exports.serializeFault = Serializer.serializeFault // (code, msg)
@@ -22,7 +41,7 @@ exports.bodyParser = (req, res, next) => {
   deserializer.deserializeMethodCall(req, (error, method, params) => {
     if (error !== null) {
       req.body = null
-      console.error('failed to deserialize method call from body:', error)
+      loggingHooks.deserializeError(error);
       next()
     } else {
       req.body = {
@@ -48,8 +67,7 @@ exports.apiHandler = (api, context, onError, onMiss) => {
     }
 
     if (req.body.method in api) {
-      console.log(`calling method '${req.body.method}`
-        + `(${JSON.stringify(req.body.params)})'`)
+      loggingHooks.incomingRequest(req);
 
       try {
         const method = api[req.body.method]
@@ -65,7 +83,7 @@ exports.apiHandler = (api, context, onError, onMiss) => {
 
         // otherwise log & send generic xmlrpc fault
         } else {
-          console.error(`error calling method '${req.body.method}:`, error)
+          loggingHooks.requestError(req, error);
 
           res.send(
             exports.serializeFault(
